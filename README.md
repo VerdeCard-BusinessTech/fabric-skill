@@ -8,7 +8,15 @@ Skill do Claude Code para consultar o Microsoft Fabric (Lakehouse/Warehouse) **s
 - O **link de conexão SQL** do Lakehouse. Veja o guia com prints em [`guia/index.html`](guia/index.html).
 - **Não precisa de senha de banco.** O login é feito no navegador com sua conta Microsoft.
 
-## Instalação
+## Instalação rápida: só mandar para o Claude
+
+No **Claude Code** (app desktop, aba Code, ou terminal), cole esta mensagem:
+
+> Instale a skill https://github.com/VerdeCard-BusinessTech/fabric-skill clonando em ~/.claude/skills/fabric-readonly e depois me ajude a configurar o acesso ao Fabric.
+
+O Claude clona, instala o ambiente, mostra o guia para pegar o link, abre o login da Microsoft no navegador e testa. Você só cola o link e faz o login.
+
+## Instalação manual
 1. Clone o repositório direto na pasta de skills do Claude:
    ```bash
    git clone https://github.com/VerdeCard-BusinessTech/fabric-skill.git ~/.claude/skills/fabric-readonly
