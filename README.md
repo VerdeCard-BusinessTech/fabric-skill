@@ -6,21 +6,52 @@ Funciona em **macOS 15 (Sequoia) ou mais novo**, **Windows 10/11** (x64 ou ARM) 
 
 ## O que você precisa
 
-- **Claude Code**: aba **Code** do app desktop do Claude, ou `claude` no terminal. O chat comum do claude.ai não serve, porque a skill roda um script no seu computador.
-- **Python 3.10 ou mais novo.**
+- **O app Claude no computador, na aba Code** (veja o [Passo 0](#passo-0-abrir-o-claude-code)). O chat do site claude.ai **não funciona**, porque a skill precisa rodar no seu computador.
 - **Acesso de leitura ao workspace no Fabric** com sua conta da empresa.
 - O **link de conexão SQL** do Lakehouse. Veja [como pegar o link](#como-pegar-o-link-de-conexão).
 - **Não precisa de senha de banco.** O login é feito no navegador com sua conta Microsoft.
+
+O Python e o resto o Claude instala ou pede para você instalar durante a configuração.
+
+---
+
+## Passo 0: abrir o Claude Code
+
+> **Nunca usou o Claude Code?** Ele é o Claude trabalhando direto no seu computador: consegue instalar programas, rodar comandos e abrir arquivos (sempre pedindo sua permissão). O chat do site claude.ai **não faz isso**. Se você colar a mensagem de instalação lá, ele só vai te explicar como chegar aqui.
+
+Sua conta Claude precisa ter acesso ao Claude Code (planos Pro, Max, Team ou Enterprise). Se não aparecer a aba **Code**, fale com quem administra o Claude na empresa.
+
+### Windows e macOS: app desktop (recomendado)
+
+1. Baixe e instale o app em **[claude.ai/download](https://claude.ai/download)**.
+2. Abra o app e entre com sua conta Claude.
+3. Clique na aba **Code**, no topo ou na lateral do app. **Não use a aba de chat.**
+4. Se ele pedir uma **pasta de trabalho**, escolha qualquer pasta (por exemplo, *Documentos*).
+5. Cole a mensagem da [instalação rápida](#instalação-rápida-só-mandar-para-o-claude) na caixa de texto e envie.
+6. Quando o Claude pedir **permissão para rodar um comando**, leia e clique em **Permitir**. São os comandos de instalação.
+
+### Linux (ou quem prefere terminal): Claude Code no terminal
+
+O app desktop não tem versão para Linux. Use o Claude Code no terminal:
+
+```bash
+curl -fsSL https://claude.ai/install.sh | bash
+claude
+```
+
+No Windows ou no macOS, também dá para usar o terminal em vez do app. Windows (PowerShell): `irm https://claude.ai/install.ps1 | iex`; macOS: o mesmo comando `curl` acima. Depois rode `claude`, faça o login e cole a mensagem.
 
 ---
 
 ## Instalação rápida: só mandar para o Claude
 
-Abra o Claude Code e cole esta mensagem (vale para qualquer sistema):
+Com o **Claude Code aberto** (Passo 0), copie e cole esta mensagem:
 
-> Instale a skill https://github.com/VerdeCard-BusinessTech/fabric-skill clonando em ~/.claude/skills/fabric-readonly e depois me ajude a configurar o acesso ao Fabric.
+```text
+Instale a skill https://github.com/VerdeCard-BusinessTech/fabric-skill no meu computador. Primeiro detecte meu sistema operacional (macOS, Windows ou Linux) e siga a seção do README para ele: clone em ~/.claude/skills/fabric-readonly, rode o setup e me ajude a configurar o acesso ao Fabric, me guiando passo a passo em linguagem simples. Se você NÃO estiver rodando no meu computador (por exemplo, se este for o chat do site claude.ai), não tente instalar: me explique, sem termos técnicos, como abrir a aba Code do app Claude no meu computador e onde colar esta mesma mensagem.
+```
 
-O Claude clona o repositório, instala o ambiente, mostra o guia, pede o link, abre o login da Microsoft e testa. Você só cola o link e faz o login.
+O Claude identifica seu sistema, baixa a skill, instala o ambiente, mostra o guia, pede o link, abre o login da Microsoft e testa. Você só cola o link, faz o login e clica em **Permitir** quando ele pedir.
 
 ---
 

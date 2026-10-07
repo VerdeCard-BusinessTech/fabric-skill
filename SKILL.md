@@ -13,13 +13,40 @@ Caminhos usados abaixo (funciona em macOS, Linux e Windows):
   - Windows: `%USERPROFILE%\.config\fabric-readonly\venv\Scripts\python.exe` (no Git Bash do Claude Code: `~/.config/fabric-readonly/venv/Scripts/python.exe`)
 - `Q` = `<pasta desta skill>/scripts/fabric_query.py`
 
+## 0. Instalação: detecte o sistema antes de tudo
+
+O público inclui pessoas não técnicas (back office). Fale em linguagem simples, um passo por vez, sem jargão. Antes de cada comando que vai pedir permissão, diga em uma frase o que ele faz.
+
+**a) Confirme que está no computador da pessoa.** Se você estiver num sandbox na nuvem, por exemplo no chat do claude.ai (diretórios como `/home/claude` ou `/mnt/user-data`, sem acesso ao `~/.claude` real da pessoa), **não instale**. Explique de forma simples:
+1. "Eu estou no chat do site, que não consegue instalar nada no seu computador. Precisamos usar o app Claude na aba **Code**."
+2. Baixar o app em **claude.ai/download** (Windows ou Mac) e entrar com a mesma conta.
+3. Clicar na aba **Code**, não na de chat. Se pedir uma pasta, escolher qualquer uma, como *Documentos*.
+4. Colar lá a mesma mensagem de instalação e clicar em **Permitir** quando o Claude pedir para rodar comandos.
+5. No Linux não existe app: instalar pelo terminal com `curl -fsSL https://claude.ai/install.sh | bash` e rodar `claude`.
+
+**b) Detecte o sistema operacional** antes de escolher comandos:
+- `uname -s 2>/dev/null || echo Windows`: `Darwin` = macOS, `Linux` = Linux, `MINGW*`/`MSYS*`/`CYGWIN*` ou erro = Windows (Git Bash ou PowerShell).
+- macOS: confira a versão com `sw_vers -productVersion`. O driver exige **macOS 15+**. Se for mais antigo, avise que não vai funcionar e pare.
+- Linux: confira a distro com `cat /etc/os-release`.
+
+**c) Instale conforme o sistema** (a pasta da skill é `~/.claude/skills/fabric-readonly`; no Windows, `%USERPROFILE%\.claude\skills\fabric-readonly`):
+
+| Sistema | Python (se faltar 3.10+) | Git (se faltar) | Setup |
+|---|---|---|---|
+| macOS | instalador de python.org/downloads (mais simples para leigos) ou `brew install python` | `xcode-select --install` | `python3 <skill>/scripts/setup.py` |
+| Windows | `winget install Python.Python.3.12` (depois reabra o terminal/app) | `winget install Git.Git` | `py <skill>\scripts\setup.py` (ou `python`) |
+| Debian/Ubuntu | `sudo apt install -y python3 python3-venv` | `sudo apt install -y git` | `python3 <skill>/scripts/setup.py` + `sudo apt install -y libltdl7 libkrb5-3 libgssapi-krb5-2` |
+| RHEL/Fedora | `sudo dnf install -y python3` | `sudo dnf install -y git` | `python3 <skill>/scripts/setup.py` + `sudo dnf install -y libtool-ltdl krb5-libs` |
+
+Comandos com `sudo` pedem a senha do computador: avise a pessoa antes. O `setup.py` imprime o caminho exato do `PY`; use esse caminho dali em diante.
+
+Depois do setup, siga para o onboarding (passo 2).
+
 ## 1. Primeiro uso: verifique antes de qualquer consulta
 
 Verifique se o `PY` acima existe e rode `$PY $Q profiles`.
 
-- Se o ambiente não existir → rode `python3 <pasta da skill>/scripts/setup.py` (Windows: `py` ou `python` no lugar de `python3`). Faça sem perguntar; só instala dependências locais. Ele imprime o caminho exato do `PY`.
-  - Se faltar Python 3.10+: oriente a instalar (macOS `brew install python`; Windows `winget install Python.Python.3.12`; Ubuntu/Debian `sudo apt install python3 python3-venv`).
-  - Linux, se a conexão falhar por biblioteca ausente: Debian/Ubuntu `sudo apt install -y libltdl7 libkrb5-3 libgssapi-krb5-2`; RHEL/Fedora `sudo dnf install -y libtool-ltdl krb5-libs`.
+- Se o ambiente não existir → faça a instalação do passo 0 (sem perguntar; ela só instala dependências locais).
 - Se não houver perfil → **siga o onboarding do passo 2** antes de responder o pedido original. Ao terminar, volte e atenda o que o usuário pediu.
 
 ## 2. Onboarding (pessoa que acabou de instalar)
