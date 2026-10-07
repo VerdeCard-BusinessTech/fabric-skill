@@ -347,6 +347,80 @@ def open_guide() -> None:
         webbrowser.open(GUIDE.as_uri())
 
 
+def _ago(seconds: float) -> str:
+    if seconds < 3600:
+        return f"{int(seconds // 60)} min"
+    if seconds < 86400:
+        return f"{int(seconds // 3600)}h"
+    return f"{int(seconds // 86400)} dia(s)"
+
+
+def quick_guide() -> str:
+    """Guia rápido em Markdown. Os valores vêm das constantes do código, então nunca desatualiza."""
+    import time
+    cfg = load_config()
+    lines = ["# Guia rápido: Fabric somente leitura", "", "## Sua configuração"]
+    if cfg["profiles"]:
+        for n, pr in cfg["profiles"].items():
+            cache = CONFIG_DIR / f"schema_{re.sub(r'[^A-Za-z0-9_-]', '_', n)}.json"
+            age = ""
+            if cache.exists():
+                fetched = json.loads(cache.read_text()).get("fetched_at", 0)
+                age = f"; lista de tabelas atualizada há {_ago(time.time() - fetched)}"
+            tag = " **(padrão)**" if n == cfg.get("default") else ""
+            lines.append(f"- Lakehouse `{pr['database']}` (perfil `{n}`){tag}{age}")
+    else:
+        lines.append("- Nenhum Lakehouse configurado ainda. Peça: *\"configure o acesso ao Fabric\"*.")
+    if AUTH_RECORD.exists():
+        try:
+            lines.append(f"- Conta conectada: `{json.loads(AUTH_RECORD.read_text()).get('username', '?')}`")
+        except ValueError:
+            pass
+    lines.append("- Modo: **somente leitura**. Só consultas `SELECT` passam; qualquer alteração de dados é bloqueada.")
+
+    lines += [
+        "", "## O que você pode pedir",
+        "- *\"Quais tabelas têm 'vendas' no nome?\"*",
+        "- *\"Que colunas tem a tabela X?\"*",
+        "- *\"Faturamento por filial em setembro de 2026\"*",
+        "- *\"Compare o saldo de agosto e setembro\"* (o Claude roda tudo junto, num batch)",
+        "- *\"Exporte para CSV as vendas de ontem\"*",
+        "- *\"Monte um script Python que puxe X e Y\"* (usa as funções da skill, sem senha)",
+        "",
+        "## Configurações padrão",
+        "| O quê | Padrão | Para mudar, é só pedir |",
+        "|---|---|---|",
+        f"| Tempo máximo por consulta | **{DEFAULT_TIMEOUT // 60} min** ({DEFAULT_TIMEOUT}s); passou disso, cancela | *\"pode deixar rodar até 15 minutos\"* |",
+        "| Linhas mostradas no chat | **200** | *\"traga tudo\"* ou *\"salve em CSV\"* |",
+        f"| Consultas ao mesmo tempo no batch | **{DEFAULT_WORKERS}** | raramente necessário; não aumente sem motivo |",
+        f"| Lista de tabelas e colunas | guardada por **{SCHEMA_TTL // 3600}h** no seu computador | *\"atualize a lista de tabelas\"* |",
+        "| Lakehouse usado | o perfil padrão | *\"use o Lakehouse Y\"* ou *\"adicione outro Lakehouse\"* |",
+        "",
+        "## Batch: várias consultas de uma vez",
+        "O Fabric cobra **por janela de consulta aberta** (cerca de 1 minuto cada), não pelo volume. "
+        "Por isso o Claude junta as consultas independentes num **batch**: todas rodam em paralelo, "
+        "na mesma janela. Dez perguntas num batch custam bem menos que dez consultas separadas.",
+        "",
+        "Para ajudar:",
+        "- **Peça tudo de uma vez** (*\"quero X, Y e Z de setembro\"*) em vez de uma pergunta por vez.",
+        "- **Diga sempre o período.** Algumas tabelas têm milhões de linhas por dia.",
+        "- Ver a lista de tabelas e colunas **não gasta nada**: vem do cache local.",
+        "",
+        "## Se aparecer um erro",
+        "- **Capacidade (erro 24801):** a organização bateu no limite do Fabric naquele momento. "
+        "Não é a sua consulta. Espere alguns minutos e peça de novo.",
+        f"- **Passou de {DEFAULT_TIMEOUT // 60} min:** a consulta está pesada. Filtre por período ou peça um resumo (totais).",
+        "- **Login failed / 18456:** sua conta não tem acesso ao workspace. Peça acesso de leitura ao dono.",
+        "",
+        "## Atalhos",
+        "- *\"Mostre o guia rápido do Fabric\"*: este resumo",
+        "- *\"Abra o guia do Fabric\"*: passo a passo com prints de como pegar o link",
+        "- *\"Adicione outro Lakehouse\"*: configura mais um banco",
+        "- Regras completas: `BOAS_PRATICAS.md` na pasta da skill",
+    ]
+    return "\n".join(lines)
+
+
 def save_profile(name, server, database, tenant=None, make_default=False) -> None:
     cfg = load_config()
     cfg["profiles"][name] = {"server": normalize_server(server), "database": database, "tenant": tenant}
@@ -374,7 +448,8 @@ def init_wizard(device_code: bool) -> None:
           else "\nSiga as instruções abaixo para entrar com sua conta Microsoft:")
     do_login(None, device_code)
     _, rows, _ = run(load_config()["profiles"][name], "SELECT DB_NAME(), SUSER_SNAME()")
-    print(f"\nTudo pronto! Conectado em {rows[0][0]} como {rows[0][1]}.")
+    print(f"\nTudo pronto! Conectado em {rows[0][0]} como {rows[0][1]}.\n")
+    print(quick_guide())
 
 
 # ---------------------------------------------------------------- CLI
@@ -405,6 +480,7 @@ def main():
     s.add_argument("--default", action="store_true", help="tornar perfil padrão")
 
     sub.add_parser("guia", help="abrir o guia com prints de como pegar o link")
+    sub.add_parser("ajuda", help="guia rápido: funcionalidades, padrões e batch")
     s = sub.add_parser("init", help="assistente interativo de primeira configuração")
     s.add_argument("--device-code", action="store_true")
 
@@ -455,6 +531,10 @@ def dispatch(args):
 
     if args.cmd == "guia":
         open_guide()
+        return
+
+    if args.cmd == "ajuda":
+        print(quick_guide())
         return
 
     if args.cmd == "init":

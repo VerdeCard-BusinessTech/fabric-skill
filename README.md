@@ -53,6 +53,8 @@ Instale a skill https://github.com/VerdeCard-BusinessTech/fabric-skill no meu co
 
 O Claude identifica seu sistema, baixa a skill, instala o ambiente, mostra o guia, pede o link, abre o login da Microsoft e testa. Você só cola o link, faz o login e clica em **Permitir** quando ele pedir.
 
+No final, o Claude mostra no chat um **guia rápido**: o que dá para pedir, os padrões (tempo máximo de 5 min por consulta, 200 linhas no chat, batch) e o que fazer se der erro. Para ver de novo a qualquer hora, peça *"mostre o guia rápido do Fabric"*.
+
 ---
 
 ## Instalação manual
@@ -176,6 +178,7 @@ Comandos diretos, se quiser usar sem o Claude (`PY` = Python do ambiente, veja o
 | `PY fabric_query.py profiles` | lista os Lakehouses configurados |
 | `PY fabric_query.py setup --profile nome --server <link> --database <Lakehouse>` | adiciona outro Lakehouse |
 | `PY fabric_query.py guia` | abre o guia com os prints |
+| `PY fabric_query.py ajuda` | guia rápido: o que pedir, padrões (5 min, 200 linhas, batch) e erros |
 
 Cada consulta tem limite de 300 segundos (`--timeout` muda isso).
 

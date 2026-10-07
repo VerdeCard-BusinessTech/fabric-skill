@@ -81,6 +81,27 @@ Avise antes do `login`: "vai abrir uma aba do navegador com o login da Microsoft
 
 **e) Confirme o sucesso** mostrando com qual usuário conectou e rodando `tables` para listar o que a pessoa enxerga.
 
+**f) Apresente o guia rápido no chat.** Rode `$PY $Q ajuda` e **mostre a saída na conversa**, no próprio chat, sem só dizer que existe. Ela já vem em Markdown com:
+- a configuração da pessoa;
+- exemplos do que pedir;
+- a tabela de padrões (tempo máximo de 5 min por consulta, 200 linhas no chat, 20 consultas simultâneas no batch, cache de 24h, somente leitura);
+- a explicação do batch e o que fazer em caso de erro.
+
+Mantenha o conteúdo e a tabela de padrões **como vieram**, porque os números saem do código e estão sempre certos. Pode encurtar a introdução. Termine com: *"Quer fazer a primeira consulta? Me diga o que precisa e o período."*
+
+**Guia rápido a qualquer momento:** quando a pessoa perguntar *"o que essa skill faz?"*, *"como funciona?"*, *"quais são os padrões/limites?"*, *"ajuda do Fabric"* ou pedir o guia rápido, rode `$PY $Q ajuda` e apresente a saída da mesma forma.
+
+**Mudando padrões a pedido:** traduza o pedido em opções do comando, só para aquela consulta:
+
+| Pedido | Opção |
+|---|---|
+| "pode demorar mais" | `--timeout <seg>` |
+| "traga tudo" | `--max-rows 0` (e prefira `--out arquivo.csv`) |
+| "atualize a lista de tabelas" | `--refresh` |
+| "use o Lakehouse Y" | `--profile y` |
+
+Nunca mude o modo somente leitura.
+
 Pré-requisito de acesso: a conta precisa de permissão de leitura no workspace/item (função Viewer, ou o item compartilhado com "Read all data using SQL"). Erro 18456 / "not authorized" = falta permissão; oriente a pessoa a pedir acesso ao dono do workspace.
 Se a conta tiver vários tenants, adicione `--tenant <tenant-id>` no `setup`.
 
