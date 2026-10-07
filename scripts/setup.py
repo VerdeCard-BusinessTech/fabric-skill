@@ -23,7 +23,8 @@ if not py.exists():
     venv.create(env_dir, with_pip=True)
 
 subprocess.check_call([str(py), "-m", "pip", "install", "-q", "--upgrade", "pip"])
-subprocess.check_call([str(py), "-m", "pip", "install", "-q", "mssql-python>=1.15", "azure-identity>=1.19"])
+subprocess.check_call([str(py), "-m", "pip", "install", "-q", "mssql-python>=1.15", "azure-identity>=1.19",
+                       "pandas>=2.0"])
 
 query = Path(__file__).resolve().parent / "fabric_query.py"
 print(f"OK: ambiente em {env_dir}")

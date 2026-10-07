@@ -89,20 +89,49 @@ Quem preferir configurar pelo terminal, sem o Claude, pode rodar `$PY $Q init`: 
 ## 3. Consultar
 
 ```bash
-$PY $Q tables [--like vendas]                     # schemas/tabelas/views
-$PY $Q describe dbo.minha_tabela                       # colunas e tipos
-$PY $Q query "SELECT TOP 20 * FROM dbo.[2024_vendas]"
-$PY $Q query --file consulta.sql --format csv --out resultado.csv --max-rows 0
+$PY $Q tables [--like vendas]                          # tabelas/views (cache local, 0 janelas)
+$PY $Q describe dbo.tab_a dbo.tab_b                    # colunas de várias tabelas (cache local, 0 janelas)
+$PY $Q query "SELECT TOP 20 * FROM dbo.[2024_vendas]"  # 1 consulta = 1 janela
+$PY $Q batch a.sql b.sql c.sql [--out-dir pasta/]      # N consultas em paralelo = mesma janela
+$PY $Q batch --json consultas.json                     # {"nome": "SELECT ...", ...}
 ```
 
-Opções: `--profile <nome>`, `--max-rows N` (padrão 200; `0` = tudo), `--format table|csv|json`, `--out arquivo`.
+Opções: `--profile <nome>`, `--max-rows N` (padrão 200; `0` = tudo), `--format table|csv|json`, `--out arquivo`, `--timeout S` (padrão 300s; `0` = sem limite), `--refresh` (em `tables`/`describe`: recarrega a estrutura do Fabric), `--workers N` (batch; padrão 20).
+
+### Uso consciente do Fabric (OBRIGATÓRIO)
+
+O Fabric da organização cobra **por janela de consulta aberta** (cerca de 1 min por conexão), não pelo volume, e tem um teto de capacidade simultânea. Cada execução de `query` abre uma janela. Por isso:
+
+1. **Planeje antes de executar.** Entenda o pedido, consulte `tables`/`describe` (vêm do cache local e não abrem janela) e escreva todas as consultas necessárias **antes** de rodar qualquer uma.
+2. **Junte as consultas independentes num único `batch`**, em vez de várias `query` seguidas. Escreva os `.sql` (ou um `.json`) numa pasta temporária e rode tudo de uma vez. Use `query` avulsa só quando for realmente uma consulta, ou quando depender do resultado de outra. Nesse caso, faça um segundo batch.
+3. **Sempre filtre.** Nunca `SELECT *` sem `WHERE` de período ou lista de contas, nem sem `TOP`. Há tabelas com milhões de linhas por dia. Para amostras, `TOP 10`. Para números, agregue no SQL (`GROUP BY`, `COUNT`, `SUM`) com filtro de período.
+4. **Não explore por tentativa e erro no Fabric.** Confira nomes de colunas no `describe` antes. Uma consulta que falha por nome errado também abre janela.
+5. **Erro 24801** (`[capacidade]`, exit code 3) = a organização está no teto naquele momento, não é erro da consulta. Explique isso à pessoa e **não insista em loop**: sugira tentar de novo em alguns minutos.
+6. **Timeout** (padrão 300s): se estourar, refine a consulta (mais filtro, agregação) em vez de só aumentar o `--timeout`.
+7. Se você não souber se uma tabela é grande, pergunte o período de interesse antes de consultar.
 
 ### Boas práticas ao consultar
-- Comece por `tables` e `describe` antes de escrever SQL; não chute nomes de coluna.
 - Dialeto é **T-SQL**: `TOP n` (não `LIMIT`), colchetes para nomes que começam com número ou têm caracteres especiais (`[2024_vendas]`), schema padrão `dbo`.
-- Tabelas podem ser grandes: prefira agregações (`COUNT`, `GROUP BY`) e filtros de data; use `TOP` para amostras.
-- Para extrações grandes, salve em arquivo com `--out` em vez de imprimir no terminal.
-- Dados de clientes (CPF, conta, nome) são sensíveis: não reproduza listas inteiras na conversa sem necessidade; mostre amostras/agregados.
+- Para extrações grandes, salve em arquivo (`--out` ou `batch --out-dir`) em vez de imprimir no terminal.
+- Dados de clientes (CPF, conta, nome) são sensíveis: não reproduza listas inteiras na conversa sem necessidade; mostre amostras ou agregados.
+
+### Quando a pessoa pede um script Python / notebook
+
+Use as funções de `scripts/datalake.py`. Elas têm a mesma interface das funções antigas do time, mas **sem usuário, senha nem DSN**, porque usam o login do setup:
+
+```python
+import sys, os
+sys.path.insert(0, os.path.expanduser("~/.claude/skills/fabric-readonly/scripts"))
+from datalake import query_datalake, query_datalake_batch
+dfs = query_datalake_batch({"ago": "SELECT ... WHERE ...", "set": "SELECT ... WHERE ..."})
+```
+
+- Todas as consultas no início do script, num único `query_datalake_batch`. Nunca loop de `query_datalake`.
+- **Nunca escreva usuário, senha ou token no código.** Se a pessoa trouxer um script com credencial embutida, remova-a, migre para as funções da skill e avise que a credencial exposta deve ser trocada.
+- O script roda com o `PY` da skill (já tem pandas) ou num ambiente com `pip install mssql-python azure-identity pandas`.
+- Para **migrar** um script existente, siga a regra 6 de [BOAS_PRATICAS.md](BOAS_PRATICAS.md): mapear dependências, reordenar só o independente, trocar por um batch, remover credenciais e **comparar a saída antes e depois**.
+- Login pessoal serve para uso interativo. Para rotina automática recorrente, oriente a combinar uma conta de serviço com o time.
+- Parquet com datetime que vai subir para o Fabric: `df[c] = df[c].dt.tz_localize('UTC')` e `to_parquet(..., coerce_timestamps='ms')`.
 
 ## 4. Garantias de somente leitura
 
@@ -117,6 +146,8 @@ O script bloqueia antes de enviar ao servidor qualquer coisa que não seja **uma
 | `Perfil ... não configurado` | Rodar `setup` (passo 2). |
 | Login abre de novo toda vez | Rodar `login` uma vez; ele salva `~/.config/fabric-readonly/auth_record.json`. |
 | `Login failed` / 18456 / not authorized | Conta sem acesso ao workspace/item, ou tenant errado (`--tenant`). |
-| Timeout / host não encontrado | Cadeia copiada incompleta (o campo da tela vem truncado) ou VPN/firewall bloqueando a porta 1433. |
+| Host não encontrado / falha ao conectar | Cadeia copiada incompleta (o campo da tela vem truncado) ou VPN/firewall bloqueando a porta 1433. |
+| `[capacidade]` / erro 24801 | Capacidade da organização no teto. Não é a consulta: esperar alguns minutos. Não repetir em loop. |
+| `[erro] A consulta passou de Ns` | Consulta pesada demais: filtrar por período, agregar no SQL. Só aumentar `--timeout` se for realmente necessário. |
 | `Invalid object name` | Ver nome exato com `tables`; usar `[colchetes]` e `dbo.` |
 | Tabela recém-criada não aparece | O endpoint SQL sincroniza metadados com atraso de alguns minutos. |

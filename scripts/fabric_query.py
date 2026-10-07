@@ -12,6 +12,9 @@ Uso:
   fabric_query.py describe <tabela> [--profile neg_bt]
   fabric_query.py query "SELECT TOP 10 * FROM dbo.x" [--max-rows 200] [--format table|csv|json] [--out arq.csv]
   fabric_query.py query --file consulta.sql
+  fabric_query.py batch a.sql b.sql [--json consultas.json] [--out-dir resultados/]
+
+Em scripts Python/notebooks, use scripts/datalake.py (query_datalake / query_datalake_batch).
 """
 import argparse
 import csv
@@ -28,6 +31,38 @@ CONFIG_DIR = Path(os.environ.get("FABRIC_RO_HOME", Path.home() / ".config" / "fa
 CONFIG_FILE = CONFIG_DIR / "config.json"
 AUTH_RECORD = CONFIG_DIR / "auth_record.json"
 CACHE_NAME = "fabric-readonly"
+SCOPE = "https://database.windows.net/.default"
+DEFAULT_TIMEOUT = 300          # segundos por consulta (0 = sem limite)
+DEFAULT_WORKERS = 20           # guardrail de consultas simultâneas no batch
+SCHEMA_TTL = 24 * 3600         # cache da estrutura das tabelas vale 24h
+
+
+class FabricError(RuntimeError):
+    """Erro com mensagem já amigável para o usuário."""
+
+
+class ReadOnlyViolation(FabricError):
+    pass
+
+
+class FabricCapacityError(FabricError):
+    pass
+
+
+CAPACITY_MSG = ("A capacidade de processamento do Fabric da organização está no limite agora (erro 24801). "
+                "Não é erro da sua consulta: espere alguns minutos e tente de novo. Para ajudar, junte as "
+                "consultas num batch e filtre por período.")
+TIMEOUT_MSG = ("A consulta passou de {s}s e foi cancelada. Filtre por período/lista de contas, agregue "
+               "(GROUP BY) ou aumente o limite com --timeout.")
+
+
+def _translate_error(exc: Exception, timeout: int) -> Exception:
+    msg = str(exc)
+    if "24801" in msg or "capacity has exceeded" in msg.lower():
+        return FabricCapacityError(CAPACITY_MSG)
+    if timeout and ("HYT00" in msg or "timeout expired" in msg.lower() or "query timeout" in msg.lower()):
+        return FabricError(TIMEOUT_MSG.format(s=timeout))
+    return exc
 
 # ---------------------------------------------------------------- read-only guard
 
@@ -52,15 +87,15 @@ def _strip_sql(sql: str) -> str:
 def assert_read_only(sql: str) -> str:
     cleaned = _strip_sql(sql).strip().rstrip(";").strip()
     if not cleaned:
-        raise SystemExit("Consulta vazia.")
+        raise ReadOnlyViolation("Consulta vazia.")
     if ";" in cleaned:
-        raise SystemExit("Bloqueado: apenas UMA instrução por execução (encontrei ';' no meio).")
+        raise ReadOnlyViolation("Bloqueado: apenas UMA instrução por execução (encontrei ';' no meio).")
     words = re.findall(r"[A-Za-z_]+", cleaned.upper())
     if words[0] not in ("SELECT", "WITH"):
-        raise SystemExit(f"Bloqueado: só SELECT/WITH são permitidos (começa com {words[0]}).")
+        raise ReadOnlyViolation(f"Bloqueado: só SELECT/WITH são permitidos (começa com {words[0]}).")
     bad = sorted(FORBIDDEN.intersection(words))
     if bad:
-        raise SystemExit(f"Bloqueado: palavras-chave não permitidas em modo leitura: {', '.join(bad)}")
+        raise ReadOnlyViolation(f"Bloqueado: palavras-chave não permitidas em modo leitura: {', '.join(bad)}")
     return sql.strip().rstrip(";")
 
 
@@ -81,7 +116,7 @@ def get_profile(name: str | None) -> tuple[str, dict]:
     name = name or cfg.get("default")
     if not name or name not in cfg["profiles"]:
         known = ", ".join(cfg["profiles"]) or "(nenhum)"
-        raise SystemExit(f"Perfil '{name}' não configurado. Perfis: {known}. Rode o comando 'setup' primeiro.")
+        raise FabricError(f"Perfil '{name}' não configurado. Perfis: {known}. Rode o comando 'setup' primeiro.")
     return name, cfg["profiles"][name]
 
 
@@ -125,27 +160,35 @@ def get_credential(tenant: str | None, device_code: bool = False):
 
 def do_login(tenant: str | None, device_code: bool) -> None:
     cred = get_credential(tenant, device_code)
-    record = cred.authenticate(scopes=["https://database.windows.net/.default"])
+    record = cred.authenticate(scopes=[SCOPE])
     CONFIG_DIR.mkdir(parents=True, exist_ok=True)
     AUTH_RECORD.write_text(record.serialize())
     os.chmod(AUTH_RECORD, 0o600)
     print(f"Login OK: {record.username} (tenant {record.tenant_id})")
 
 
-def connect(profile: dict, device_code: bool = False):
+def connect(profile: dict, device_code: bool = False, cred=None, timeout: int = DEFAULT_TIMEOUT):
     import mssql_python
     conn_str = (
         f"Server=tcp:{profile['server']},1433;"
         f"Database={profile['database']};"
         "Encrypt=yes;TrustServerCertificate=no;ApplicationIntent=ReadOnly;"
     )
-    cred = get_credential(profile.get("tenant"), device_code)
+    cred = cred or get_credential(profile.get("tenant"), device_code)
     # autocommit=False + rollback no final: nada é efetivado mesmo que algo escape do filtro
-    return mssql_python.connect(conn_str, autocommit=False, token_provider=cred, timeout=60)
+    conn = mssql_python.connect(conn_str, autocommit=False, token_provider=cred, timeout=60)
+    if timeout:
+        conn.timeout = timeout   # limite por consulta
+    return conn
 
 
-def run(profile: dict, sql: str, params=(), max_rows: int = 200, device_code: bool = False):
-    conn = connect(profile, device_code)
+def run(profile: dict, sql: str, params=(), max_rows: int = 200, device_code: bool = False,
+        timeout: int = DEFAULT_TIMEOUT, cred=None):
+    """Executa UMA consulta (uma conexão = uma janela de cobrança no Fabric)."""
+    try:
+        conn = connect(profile, device_code, cred, timeout)
+    except Exception as e:
+        raise _translate_error(e, timeout) from e
     try:
         cur = conn.cursor()
         cur.execute(sql, params) if params else cur.execute(sql)
@@ -155,11 +198,81 @@ def run(profile: dict, sql: str, params=(), max_rows: int = 200, device_code: bo
         if truncated:
             rows = rows[:max_rows]
         return cols, [list(r) for r in rows], truncated
+    except Exception as e:
+        raise _translate_error(e, timeout) from e
     finally:
         try:
             conn.rollback()
         finally:
             conn.close()
+
+
+def run_batch(profile: dict, queries: dict, max_rows: int = 0, device_code: bool = False,
+              timeout: int = DEFAULT_TIMEOUT, max_workers: int = DEFAULT_WORKERS) -> dict:
+    """Executa várias consultas em paralelo, todas no mesmo instante, para caberem na mesma
+    janela de cobrança do Fabric. Uma conexão por thread (conexões não são thread-safe).
+
+    Todas as consultas passam pelo filtro de leitura ANTES de qualquer execução.
+    Retorna {nome: (cols, rows, truncated)} ou {nome: Exception} para as que falharam.
+    """
+    from concurrent.futures import ThreadPoolExecutor
+
+    checked = {name: assert_read_only(sql) for name, sql in queries.items()}
+    cred = get_credential(profile.get("tenant"), device_code)
+    cred.get_token(SCOPE)   # resolve o login antes de abrir as threads (evita N janelas de login)
+
+    def one(item):
+        name, sql = item
+        try:
+            return name, run(profile, sql, (), max_rows, timeout=timeout, cred=cred)
+        except Exception as e:  # um erro não derruba as outras consultas
+            return name, e
+
+    workers = max(1, min(max_workers or len(checked), len(checked)))
+    with ThreadPoolExecutor(max_workers=workers) as ex:
+        return dict(ex.map(one, checked.items()))
+
+
+# ---------------------------------------------------------------- cache da estrutura (tabelas/colunas)
+
+SCHEMA_SQL = """
+SELECT c.TABLE_SCHEMA, c.TABLE_NAME, t.TABLE_TYPE, c.COLUMN_NAME, c.DATA_TYPE,
+       c.CHARACTER_MAXIMUM_LENGTH, c.IS_NULLABLE
+FROM INFORMATION_SCHEMA.COLUMNS c
+JOIN INFORMATION_SCHEMA.TABLES t ON t.TABLE_SCHEMA = c.TABLE_SCHEMA AND t.TABLE_NAME = c.TABLE_NAME
+WHERE c.TABLE_SCHEMA NOT IN ('sys', 'queryinsights', 'INFORMATION_SCHEMA')
+ORDER BY c.TABLE_SCHEMA, c.TABLE_NAME, c.ORDINAL_POSITION
+"""
+
+
+def load_schema(name: str, profile: dict, refresh: bool = False, device_code: bool = False) -> dict:
+    """Estrutura de todas as tabelas numa ÚNICA consulta, guardada por 24h.
+    Assim listar tabelas e descrever colunas não abre uma janela no Fabric a cada pedido."""
+    import time
+    path = CONFIG_DIR / f"schema_{re.sub(r'[^A-Za-z0-9_-]', '_', name)}.json"
+    if not refresh and path.exists():
+        data = json.loads(path.read_text())
+        if time.time() - data.get("fetched_at", 0) < SCHEMA_TTL:
+            return data
+    _, rows, _ = run(profile, SCHEMA_SQL, max_rows=0, device_code=device_code)
+    tables: dict = {}
+    for schema, table, ttype, col, dtype, size, nullable in rows:
+        t = tables.setdefault(f"{schema}.{table}", {"schema": schema, "table": table, "type": ttype, "columns": []})
+        t["columns"].append([col, dtype, size, nullable])
+    data = {"fetched_at": time.time(), "tables": tables}
+    CONFIG_DIR.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(data, ensure_ascii=False))
+    return data
+
+
+def find_table(schema_data: dict, ref: str) -> dict:
+    schema, _, table = ref.replace("[", "").replace("]", "").rpartition(".")
+    hits = [t for t in schema_data["tables"].values()
+            if t["table"].lower() == table.lower() and (not schema or t["schema"].lower() == schema.lower())]
+    if not hits:
+        raise FabricError(f"Tabela '{ref}' não encontrada. Use 'tables --like' para procurar "
+                          "ou '--refresh' se ela foi criada há pouco.")
+    return hits[0]
 
 
 # ---------------------------------------------------------------- saída
@@ -281,6 +394,8 @@ def main():
             sp.add_argument("--max-rows", type=int, default=200, help="0 = sem limite")
             sp.add_argument("--format", choices=["table", "csv", "json"], default="table")
             sp.add_argument("--out", help="salvar resultado em arquivo")
+            sp.add_argument("--timeout", type=int, default=DEFAULT_TIMEOUT,
+                            help=f"segundos por consulta (padrão {DEFAULT_TIMEOUT}; 0 = sem limite)")
 
     s = sub.add_parser("setup", help="salvar perfil de conexão")
     s.add_argument("--profile", required=True)
@@ -298,18 +413,41 @@ def main():
     s = sub.add_parser("profiles", help="listar perfis")
     s = sub.add_parser("test", help="testar conexão")
     common(s, output=False)
-    s = sub.add_parser("tables", help="listar tabelas/views")
+    s = sub.add_parser("tables", help="listar tabelas/views (usa cache de 24h)")
     common(s)
     s.add_argument("--like", help="filtro por nome (contém)")
-    s = sub.add_parser("describe", help="colunas de uma tabela")
+    s.add_argument("--refresh", action="store_true", help="recarregar a estrutura do Fabric")
+    s = sub.add_parser("describe", help="colunas de uma ou mais tabelas (usa cache de 24h)")
     common(s)
-    s.add_argument("table", help="tabela ou schema.tabela")
+    s.add_argument("table", nargs="+", help="tabela ou schema.tabela (pode passar várias)")
+    s.add_argument("--refresh", action="store_true", help="recarregar a estrutura do Fabric")
     s = sub.add_parser("query", help="executar SELECT")
     common(s)
     s.add_argument("sql", nargs="?")
     s.add_argument("--file")
+    s = sub.add_parser("batch", help="várias consultas em paralelo, na mesma janela do Fabric")
+    common(s)
+    s.add_argument("files", nargs="*", help="arquivos .sql (o nome do arquivo vira o nome do resultado)")
+    s.add_argument("--json", help='arquivo JSON {"nome": "SELECT ..."}')
+    s.add_argument("--out-dir", help="salvar cada resultado como <nome>.csv/.json nesta pasta")
+    s.add_argument("--workers", type=int, default=DEFAULT_WORKERS,
+                   help=f"consultas simultâneas (padrão {DEFAULT_WORKERS}; não aumente sem necessidade)")
 
     args = p.parse_args()
+    try:
+        dispatch(args)
+    except ReadOnlyViolation as e:
+        print(f"[bloqueado] {e}", file=sys.stderr)
+        sys.exit(2)
+    except FabricCapacityError as e:
+        print(f"[capacidade] {e}", file=sys.stderr)
+        sys.exit(3)
+    except FabricError as e:
+        print(f"[erro] {e}", file=sys.stderr)
+        sys.exit(1)
+
+
+def dispatch(args):
 
     if args.cmd == "setup":
         save_profile(args.profile, args.server, args.database, args.tenant, args.default)
@@ -342,32 +480,60 @@ def main():
         return
 
     if args.cmd == "tables":
-        sql = ("SELECT TABLE_SCHEMA AS [schema], TABLE_NAME AS tabela, TABLE_TYPE AS tipo "
-               "FROM INFORMATION_SCHEMA.TABLES")
-        params = ()
-        if args.like:
-            sql += " WHERE TABLE_NAME LIKE ?"
-            params = (f"%{args.like}%",)
-        sql += " ORDER BY 1, 2"
-        emit(*run(profile, sql, params, args.max_rows, args.device_code), args)
+        data = load_schema(name, profile, args.refresh, args.device_code)
+        like = (args.like or "").lower()
+        rows = [[t["schema"], t["table"], t["type"], len(t["columns"])]
+                for t in data["tables"].values() if like in t["table"].lower()]
+        limit = args.max_rows if args.max_rows > 0 else len(rows)
+        emit(["schema", "tabela", "tipo", "colunas"], rows[:limit], len(rows) > limit, args)
         return
 
     if args.cmd == "describe":
-        schema, _, table = args.table.rpartition(".")
-        sql = ("SELECT COLUMN_NAME AS coluna, DATA_TYPE AS tipo, CHARACTER_MAXIMUM_LENGTH AS tam, "
-               "IS_NULLABLE AS nulo FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME = ?")
-        params = [table.strip("[]")]
-        if schema:
-            sql += " AND TABLE_SCHEMA = ?"
-            params.append(schema.strip("[]"))
-        sql += " ORDER BY ORDINAL_POSITION"
-        emit(*run(profile, sql, tuple(params), args.max_rows, args.device_code), args)
+        data = load_schema(name, profile, args.refresh, args.device_code)
+        for i, ref in enumerate(args.table):
+            t = find_table(data, ref)
+            if len(args.table) > 1:
+                print(f"{'' if i == 0 else chr(10)}### {t['schema']}.{t['table']} ({t['type']})")
+            emit(["coluna", "tipo", "tam", "nulo"], t["columns"], False, args)
         return
 
     if args.cmd == "query":
         sql = Path(args.file).read_text() if args.file else (args.sql or sys.stdin.read())
         sql = assert_read_only(sql)
-        emit(*run(profile, sql, (), args.max_rows, args.device_code), args)
+        emit(*run(profile, sql, (), args.max_rows, args.device_code, args.timeout), args)
+        return
+
+    if args.cmd == "batch":
+        queries = {}
+        if args.json:
+            queries.update(json.loads(Path(args.json).read_text()))
+        for f in args.files:
+            queries[Path(f).stem] = Path(f).read_text()
+        if not queries:
+            raise FabricError("Nenhuma consulta. Passe arquivos .sql ou --json consultas.json.")
+        results = run_batch(profile, queries, args.max_rows, args.device_code, args.timeout, args.workers)
+        if args.out_dir:
+            Path(args.out_dir).mkdir(parents=True, exist_ok=True)
+        failed = 0
+        for qname in queries:
+            res = results[qname]
+            if isinstance(res, Exception):
+                failed += 1
+                kind = "capacidade" if isinstance(res, FabricCapacityError) else "erro"
+                print(f"### {qname}: [{kind}] {res}", file=sys.stderr)
+                continue
+            cols, rows, truncated = res
+            if args.out_dir:
+                ext = "json" if args.format == "json" else "csv"
+                out = Path(args.out_dir) / f"{qname}.{ext}"
+                out.write_text(render(cols, rows, "json" if ext == "json" else "csv"))
+                print(f"### {qname}: {len(rows)} linhas -> {out}" + (" (TRUNCADO)" if truncated else ""))
+            else:
+                print(f"\n### {qname} ({len(rows)} linhas{', TRUNCADO' if truncated else ''})")
+                print(render(cols, rows, args.format))
+        print(f"\n{len(queries) - failed}/{len(queries)} consultas OK numa única rodada.", file=sys.stderr)
+        if failed:
+            sys.exit(1)
 
 
 if __name__ == "__main__":

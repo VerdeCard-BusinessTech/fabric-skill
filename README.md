@@ -168,19 +168,52 @@ Comandos diretos, se quiser usar sem o Claude (`PY` = Python do ambiente, veja o
 
 | Comando | O que faz |
 |---|---|
-| `PY fabric_query.py tables [--like texto]` | lista tabelas e views |
-| `PY fabric_query.py describe dbo.tabela` | colunas e tipos |
+| `PY fabric_query.py tables [--like texto]` | lista tabelas e views (cache local de 24h; `--refresh` atualiza) |
+| `PY fabric_query.py describe dbo.tab_a dbo.tab_b` | colunas e tipos de uma ou mais tabelas (do cache) |
 | `PY fabric_query.py query "SELECT TOP 10 * FROM dbo.tabela"` | roda uma consulta |
+| `PY fabric_query.py batch a.sql b.sql --out-dir resultados/` | roda várias consultas **juntas**, em paralelo |
 | `... query --file consulta.sql --format csv --out saida.csv --max-rows 0` | exporta tudo para CSV |
 | `PY fabric_query.py profiles` | lista os Lakehouses configurados |
 | `PY fabric_query.py setup --profile nome --server <link> --database <Lakehouse>` | adiciona outro Lakehouse |
 | `PY fabric_query.py guia` | abre o guia com os prints |
 
+Cada consulta tem limite de 300 segundos (`--timeout` muda isso).
+
+## Uso consciente do Fabric
+
+O Fabric **cobra por janela de consulta aberta** (cerca de 1 minuto por conexão), não pelo volume, e a organização tem um **teto de capacidade simultânea** (erro 24801). A skill já ajuda:
+
+- **Lista de tabelas e colunas vem de um cache local**, buscado numa única consulta e válido por 24h. Explorar não gasta janelas.
+- **Várias consultas rodam juntas** num único `batch`, na mesma janela.
+- **Limite de tempo** de 300s por consulta, para nada ficar rodando sem fim.
+- **Erro 24801 vira uma mensagem clara**, já que é a organização no limite e não a sua consulta.
+- O Claude é instruído a **planejar antes de consultar**, **sempre filtrar** por período ou lista de contas e agregar no SQL.
+
+As regras completas, com exemplos, estão em **[BOAS_PRATICAS.md](BOAS_PRATICAS.md)**.
+
+## Para quem escreve scripts Python
+
+As funções `query_datalake` e `query_datalake_batch` estão em [`scripts/datalake.py`](scripts/datalake.py). A interface é a mesma das versões antigas do time, mas **sem usuário, senha nem DSN**: elas usam a conexão e o login do setup.
+
+```python
+import sys, os
+sys.path.insert(0, os.path.expanduser("~/.claude/skills/fabric-readonly/scripts"))
+from datalake import query_datalake, query_datalake_batch
+
+dfs = query_datalake_batch({
+    "ago": "SELECT conta, saldo FROM dbo.minha_tabela WHERE dt_base = '2026-08-31'",
+    "set": "SELECT conta, saldo FROM dbo.minha_tabela WHERE dt_base = '2026-09-30'",
+})
+```
+
+Rode com o Python da skill (`~/.config/fabric-readonly/venv/bin/python`; no Windows, `...\venv\Scripts\python.exe`), que já tem `pandas`. Como migrar scripts antigos está em [BOAS_PRATICAS.md](BOAS_PRATICAS.md#6-como-migrar-um-script-existente).
+
 ## O que fica salvo no seu computador
 
 Tudo fica em `~/.config/fabric-readonly/` (no Windows, `%USERPROFILE%\.config\fabric-readonly\`):
 
-- `venv/`: ambiente Python (`mssql-python` e `azure-identity`).
+- `venv/`: ambiente Python (`mssql-python`, `azure-identity` e `pandas`).
+- `schema_<perfil>.json`: cache da lista de tabelas e colunas (24h).
 - `config.json`: link e nome do banco de cada perfil.
 - `auth_record.json`: identifica a conta logada. Não contém senha nem token.
 - Token de acesso: guardado no cofre do sistema (Keychain no macOS, DPAPI no Windows, libsecret no Linux). Em Linux sem libsecret, fica num arquivo acessível só ao seu usuário.
