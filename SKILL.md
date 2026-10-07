@@ -7,17 +7,19 @@ description: Consulta dados do Microsoft Fabric (Lakehouse/Warehouse da Quero-Qu
 
 O SQL analytics endpoint de um Lakehouse no Fabric é um SQL Server (TDS, porta 1433) acessado com login Microsoft (Entra ID). Esta skill conecta nele **apenas para leitura** com o script `scripts/fabric_query.py`.
 
-Caminhos usados abaixo:
-- `PY=~/.config/fabric-readonly/venv/bin/python`
-- `Q=<pasta desta skill>/scripts/fabric_query.py`
+Caminhos usados abaixo (funciona em macOS, Linux e Windows):
+- `PY` = Python do ambiente da skill:
+  - macOS/Linux: `~/.config/fabric-readonly/venv/bin/python`
+  - Windows: `%USERPROFILE%\.config\fabric-readonly\venv\Scripts\python.exe` (no Git Bash do Claude Code: `~/.config/fabric-readonly/venv/Scripts/python.exe`)
+- `Q` = `<pasta desta skill>/scripts/fabric_query.py`
 
 ## 1. Primeiro uso: verifique antes de qualquer consulta
 
-```bash
-test -x ~/.config/fabric-readonly/venv/bin/python && $PY $Q profiles
-```
+Verifique se o `PY` acima existe e rode `$PY $Q profiles`.
 
-- Se o venv não existir → rode `bash <pasta da skill>/scripts/setup.sh` (sem perguntar; é só instalar dependências locais).
+- Se o ambiente não existir → rode `python3 <pasta da skill>/scripts/setup.py` (Windows: `py` ou `python` no lugar de `python3`). Faça sem perguntar; só instala dependências locais. Ele imprime o caminho exato do `PY`.
+  - Se faltar Python 3.10+: oriente a instalar (macOS `brew install python`; Windows `winget install Python.Python.3.12`; Ubuntu/Debian `sudo apt install python3 python3-venv`).
+  - Linux, se a conexão falhar por biblioteca ausente: Debian/Ubuntu `sudo apt install -y libltdl7 libkrb5-3 libgssapi-krb5-2`; RHEL/Fedora `sudo dnf install -y libtool-ltdl krb5-libs`.
 - Se não houver perfil → **siga o onboarding do passo 2** antes de responder o pedido original. Ao terminar, volte e atenda o que o usuário pediu.
 
 ## 2. Onboarding (pessoa que acabou de instalar)
@@ -48,7 +50,7 @@ $PY $Q login     # rodar em background: abre o navegador; avise a pessoa para en
 $PY $Q test
 ```
 
-Avise antes do `login`: "vai abrir uma aba do navegador com o login da Microsoft; entre com sua conta da empresa". Rode-o em background e espere terminar. Se a aba não abrir (SSH, sem navegador), use `login --device-code` e mostre o código e a URL impressos.
+Avise antes do `login`: "vai abrir uma aba do navegador com o login da Microsoft; entre com sua conta da empresa". Rode-o em background e espere terminar. Se a aba não abrir (SSH, WSL, Linux sem interface gráfica), use `login --device-code`; em Linux sem `DISPLAY` isso já acontece sozinho. Nesse modo, leia a saída do comando em background e mostre à pessoa a URL (`https://microsoft.com/devicelogin`) e o código impressos, para ela entrar por qualquer navegador, até no celular.
 
 **e) Confirme o sucesso** mostrando com qual usuário conectou e rodando `tables` para listar o que a pessoa enxerga.
 

@@ -97,10 +97,21 @@ def normalize_server(server: str) -> str:
 
 # ---------------------------------------------------------------- auth / conexão
 
+def has_browser() -> bool:
+    """Linux sem interface gráfica (servidor, SSH, WSL sem GUI) não consegue abrir o navegador."""
+    if sys.platform.startswith("linux"):
+        return bool(os.environ.get("DISPLAY") or os.environ.get("WAYLAND_DISPLAY"))
+    return True
+
+
 def get_credential(tenant: str | None, device_code: bool = False):
     from azure.identity import (AuthenticationRecord, DeviceCodeCredential,
                                 InteractiveBrowserCredential, TokenCachePersistenceOptions)
-    cache = TokenCachePersistenceOptions(name=CACHE_NAME)
+    # Token criptografado: Keychain (macOS), DPAPI (Windows), libsecret (Linux).
+    # Linux sem libsecret (servidor/WSL) cai para arquivo protegido só pelas permissões do usuário.
+    cache = TokenCachePersistenceOptions(name=CACHE_NAME,
+                                         allow_unencrypted_storage=sys.platform.startswith("linux"))
+    device_code = device_code or not has_browser()
     record = None
     if AUTH_RECORD.exists():
         record = AuthenticationRecord.deserialize(AUTH_RECORD.read_text())
@@ -218,8 +229,9 @@ Não precisa de senha: o login é feito no navegador com sua conta Microsoft.
 
 def open_guide() -> None:
     print(GUIDE_STEPS.format(guide=GUIDE))
-    if sys.platform == "darwin" and GUIDE.exists():
-        os.system(f'open "{GUIDE}"')
+    if GUIDE.exists() and has_browser():
+        import webbrowser
+        webbrowser.open(GUIDE.as_uri())
 
 
 def save_profile(name, server, database, tenant=None, make_default=False) -> None:
@@ -245,7 +257,8 @@ def init_wizard(device_code: bool) -> None:
     default_name = re.sub(r"\W+", "_", database).lower()
     name = input(f"Nome do perfil [{default_name}]: ").strip() or default_name
     save_profile(name, server, database, make_default=True)
-    print("\nAbrindo o login da Microsoft no navegador...")
+    print("\nAbrindo o login da Microsoft no navegador..." if has_browser() and not device_code
+          else "\nSiga as instruções abaixo para entrar com sua conta Microsoft:")
     do_login(None, device_code)
     _, rows, _ = run(load_config()["profiles"][name], "SELECT DB_NAME(), SUSER_SNAME()")
     print(f"\nTudo pronto! Conectado em {rows[0][0]} como {rows[0][1]}.")
@@ -254,6 +267,10 @@ def init_wizard(device_code: bool) -> None:
 # ---------------------------------------------------------------- CLI
 
 def main():
+    # console do Windows não é UTF-8 por padrão (acentos e tabelas quebrariam)
+    for stream in (sys.stdout, sys.stderr):
+        if hasattr(stream, "reconfigure"):
+            stream.reconfigure(encoding="utf-8")
     p = argparse.ArgumentParser(description="Fabric SQL endpoint — somente leitura")
     sub = p.add_subparsers(dest="cmd", required=True)
 
