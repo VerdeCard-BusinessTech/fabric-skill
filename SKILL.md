@@ -171,4 +171,5 @@ O script bloqueia antes de enviar ao servidor qualquer coisa que não seja **uma
 | `[capacidade]` / erro 24801 | Capacidade da organização no teto. Não é a consulta: esperar alguns minutos. Não repetir em loop. |
 | `[erro] A consulta passou de Ns` | Consulta pesada demais: filtrar por período, agregar no SQL. Só aumentar `--timeout` se for realmente necessário. |
 | `Invalid object name` | Ver nome exato com `tables`; usar `[colchetes]` e `dbo.` |
+| macOS: `OpenSSL library could not be loaded` | Homebrew trocou o `openssl` para a v4; o driver só aceita 1.0/1.1/3. O script reinicia sozinho apontando para o `openssl@3`. Se faltar: `brew install openssl@3`. Em notebook: iniciar o Jupyter com `DYLD_LIBRARY_PATH=/opt/homebrew/opt/openssl@3/lib`. Não mexa nos links do Homebrew. |
 | Tabela recém-criada não aparece | O endpoint SQL sincroniza metadados com atraso de alguns minutos. |

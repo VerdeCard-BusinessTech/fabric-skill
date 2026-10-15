@@ -167,7 +167,45 @@ def do_login(tenant: str | None, device_code: bool) -> None:
     print(f"Login OK: {record.username} (tenant {record.tenant_id})")
 
 
+OPENSSL_OK = ("libssl.3.dylib", "libssl.1.1.dylib", "libssl.1.0.0.dylib")
+
+
+def _openssl_fix_dir() -> str | None:
+    """macOS: o driver procura o OpenSSL só em <brew>/opt/openssl/lib e aceita as versões 1.0/1.1/3.
+    Quando o Homebrew passa o 'openssl' para a versão 4, a conexão quebra. Retorna a pasta de um
+    OpenSSL 3 instalado (openssl@3) quando é preciso redirecionar o driver para ela."""
+    if sys.platform != "darwin":
+        return None
+    for prefix in ("/opt/homebrew", "/usr/local"):
+        default = Path(prefix, "opt/openssl/lib/libssl.dylib")
+        if default.exists() and Path(os.path.realpath(default)).name in OPENSSL_OK:
+            return None                      # padrão já é compatível
+    for prefix in ("/opt/homebrew", "/usr/local"):
+        lib = Path(prefix, "opt/openssl@3/lib")
+        if (lib / "libssl.3.dylib").exists():
+            return str(lib)
+    raise FabricError("O driver precisa do OpenSSL 3, que não está instalado. Rode: brew install openssl@3")
+
+
+def ensure_openssl() -> None:
+    """Se preciso, reinicia o processo apontando o driver para o OpenSSL 3 (o macOS só lê
+    DYLD_LIBRARY_PATH na inicialização). Em notebook não dá para reiniciar: orienta o usuário."""
+    lib = _openssl_fix_dir()
+    if not lib or lib in os.environ.get("DYLD_LIBRARY_PATH", "").split(":"):
+        return
+    import __main__
+    script = getattr(__main__, "__file__", None)
+    if script and not os.environ.get("FABRIC_RO_REEXEC"):
+        env = dict(os.environ, FABRIC_RO_REEXEC="1",
+                   DYLD_LIBRARY_PATH=":".join(filter(None, [lib, os.environ.get("DYLD_LIBRARY_PATH")])))
+        sys.stdout.flush()
+        os.execve(sys.executable, [sys.executable, script, *sys.argv[1:]], env)
+    raise FabricError("O Homebrew atualizou o OpenSSL para a versão 4, que o driver não aceita. "
+                      f"Inicie o Python/Jupyter com: DYLD_LIBRARY_PATH={lib}")
+
+
 def connect(profile: dict, device_code: bool = False, cred=None, timeout: int = DEFAULT_TIMEOUT):
+    ensure_openssl()
     import mssql_python
     conn_str = (
         f"Server=tcp:{profile['server']},1433;"
