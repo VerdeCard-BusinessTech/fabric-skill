@@ -357,6 +357,129 @@ def emit(cols, rows, truncated, args):
           file=sys.stderr)
 
 
+# ---------------------------------------------------------------- versões e atualização
+
+GITHUB_RAW = "https://raw.githubusercontent.com/VerdeCard-BusinessTech/{repo}/main/{path}"
+UPDATE_STATE = CONFIG_DIR / "update_check.json"
+UPDATE_EVERY = 3600          # checa o GitHub no máximo 1x por hora
+
+
+def installed_skills() -> list[dict]:
+    """Skills do Fabric instaladas: esta e, se existir, o dicionário."""
+    here = Path(__file__).resolve().parent.parent
+    skills = [{"nome": "fabric-skill", "repo": "fabric-skill", "dir": here}]
+    for cand in (here.parent / "fabric-dicionario", Path.home() / ".claude" / "skills" / "fabric-dicionario"):
+        if (cand / "SKILL.md").exists():
+            skills.append({"nome": "fabric-dicionario", "repo": "fabric-dicionario", "dir": cand.resolve()})
+            break
+    for s in skills:
+        v = s["dir"] / "VERSION"
+        s["versao"] = v.read_text().strip() if v.exists() else "0.0.0"
+    return skills
+
+
+def _vtuple(v: str) -> tuple:
+    return tuple(int(x) for x in re.findall(r"\d+", v)[:3]) or (0,)
+
+
+def _fetch(repo: str, path: str, timeout: float = 3) -> str | None:
+    import urllib.request
+    try:
+        with urllib.request.urlopen(GITHUB_RAW.format(repo=repo, path=path), timeout=timeout) as r:
+            return r.read().decode("utf-8")
+    except Exception:
+        return None          # sem internet / GitHub fora: segue sem avisar
+
+
+def changelog_between(text: str, old: str, new: str) -> str:
+    """Seções do CHANGELOG com versão > old e <= new."""
+    out, keep = [], False
+    for line in text.splitlines():
+        m = re.match(r"^## \[?(\d+\.\d+\.\d+)", line)
+        if m:
+            keep = _vtuple(old) < _vtuple(m.group(1)) <= _vtuple(new)
+        if keep:
+            out.append(line)
+    return "\n".join(out).strip()
+
+
+def check_updates(force: bool = False) -> list[dict]:
+    """Compara a versão instalada com a do GitHub (no máximo 1x por hora). Só lê um arquivo
+    público pequeno; não envia nada sobre o usuário. Retorna as skills com versão nova."""
+    import time
+    if os.environ.get("FABRIC_RO_NO_UPDATE_CHECK"):
+        return []
+    state = {}
+    if UPDATE_STATE.exists():
+        try:
+            state = json.loads(UPDATE_STATE.read_text())
+        except ValueError:
+            state = {}
+    if not force and time.time() - state.get("checked_at", 0) < UPDATE_EVERY:
+        return [s for s in state.get("pending", [])
+                if any(i["nome"] == s["nome"] and _vtuple(i["versao"]) < _vtuple(s["nova"]) for i in installed_skills())]
+    pending = []
+    for s in installed_skills():
+        remote = _fetch(s["repo"], "VERSION")
+        if remote and _vtuple(remote.strip()) > _vtuple(s["versao"]):
+            notes = changelog_between(_fetch(s["repo"], "CHANGELOG.md") or "", s["versao"], remote.strip())
+            pending.append({"nome": s["nome"], "atual": s["versao"], "nova": remote.strip(), "novidades": notes,
+                            "major": _vtuple(remote)[0] > _vtuple(s["versao"])[0]})
+    CONFIG_DIR.mkdir(parents=True, exist_ok=True)
+    UPDATE_STATE.write_text(json.dumps({"checked_at": time.time(), "pending": pending}, ensure_ascii=False))
+    return pending
+
+
+def update_notice() -> None:
+    """Aviso curto no stderr (o Claude repassa no chat)."""
+    try:
+        pending = check_updates()
+    except Exception:
+        return
+    for p in pending:
+        first = next((l.lstrip("-* ").strip() for l in p["novidades"].splitlines()
+                      if l.strip().startswith(("-", "*"))), "")
+        tag = "IMPORTANTE (requer ação)" if p["major"] else "disponível"
+        print(f"[atualizacao] {p['nome']} {p['nova']} {tag} (instalada: {p['atual']})"
+              + (f". Novidade: {first.rstrip('.')}" if first else "")
+              + ". Para atualizar, peça ao Claude: \"atualize as skills do Fabric\".", file=sys.stderr)
+
+
+def do_update() -> None:
+    import hashlib
+    import subprocess
+    pending = {p["nome"]: p for p in check_updates(force=True)}
+    if not pending:
+        print("Tudo atualizado: " + ", ".join(f"{s['nome']} {s['versao']}" for s in installed_skills()))
+        return
+    for s in installed_skills():
+        if s["nome"] not in pending:
+            continue
+        d = s["dir"]
+        if not (d / ".git").exists():
+            print(f"{s['nome']}: não foi instalada com git. Reinstale pelo README.")
+            continue
+        git = ["git", "-C", str(d)]
+        branch = subprocess.run(git + ["branch", "--show-current"], capture_output=True, text=True).stdout.strip()
+        dirty = subprocess.run(git + ["status", "--porcelain"], capture_output=True, text=True).stdout.strip()
+        if branch != "main" or dirty:
+            print(f"{s['nome']}: pulei, a pasta tem alterações locais ou não está no branch main ({d}).")
+            continue
+        setup = d / "scripts" / "setup.py"
+        before = hashlib.sha256(setup.read_bytes()).hexdigest() if setup.exists() else None
+        r = subprocess.run(git + ["pull", "--ff-only", "-q"], capture_output=True, text=True)
+        if r.returncode:
+            print(f"{s['nome']}: falha ao atualizar: {r.stderr.strip()}")
+            continue
+        if setup.exists() and hashlib.sha256(setup.read_bytes()).hexdigest() != before:
+            print(f"{s['nome']}: dependências mudaram, reinstalando o ambiente...")
+            subprocess.run([sys.executable, str(setup)], check=False)
+        p = pending[s["nome"]]
+        print(f"\n## {s['nome']}: {p['atual']} → {p['nova']}\n")
+        print(p["novidades"] or "(sem notas de versão)")
+    check_updates(force=True)
+
+
 # ---------------------------------------------------------------- onboarding
 
 GUIDE = Path(__file__).resolve().parent.parent / "guia" / "index.html"
@@ -398,6 +521,7 @@ def quick_guide() -> str:
     import time
     cfg = load_config()
     lines = ["# Guia rápido: Fabric somente leitura", "", "## Sua configuração"]
+    lines.append("- Versões: " + ", ".join(f"`{sk['nome']}` {sk['versao']}" for sk in installed_skills()))
     if cfg["profiles"]:
         for n, pr in cfg["profiles"].items():
             cache = CONFIG_DIR / f"schema_{re.sub(r'[^A-Za-z0-9_-]', '_', n)}.json"
@@ -454,6 +578,7 @@ def quick_guide() -> str:
         "- *\"Mostre o guia rápido do Fabric\"*: este resumo",
         "- *\"Abra o guia do Fabric\"*: passo a passo com prints de como pegar o link",
         "- *\"Adicione outro Lakehouse\"*: configura mais um banco",
+        "- *\"Atualize as skills do Fabric\"*: baixa a versão nova e mostra o que mudou (a skill avisa sozinha quando há novidade)",
         "- Regras completas: `BOAS_PRATICAS.md` na pasta da skill",
     ]
     return "\n".join(lines)
@@ -519,6 +644,8 @@ def main():
 
     sub.add_parser("guia", help="abrir o guia com prints de como pegar o link")
     sub.add_parser("ajuda", help="guia rápido: funcionalidades, padrões e batch")
+    sub.add_parser("versao", help="versões instaladas e se há atualização")
+    sub.add_parser("atualizar", help="atualizar as skills do Fabric e mostrar o que mudou")
     s = sub.add_parser("init", help="assistente interativo de primeira configuração")
     s.add_argument("--device-code", action="store_true")
 
@@ -562,6 +689,22 @@ def main():
 
 
 def dispatch(args):
+    # toda vez que a skill é acionada: avisa se há versão nova (consulta o GitHub no máximo 1x/hora)
+    if args.cmd not in ("atualizar", "versao", "setup", "init", "login"):
+        update_notice()
+
+    if args.cmd == "versao":
+        pending = {p["nome"]: p for p in check_updates(force=True)}
+        for sk in installed_skills():
+            p = pending.get(sk["nome"])
+            print(f"{sk['nome']} {sk['versao']}" + (f"  → nova versão {p['nova']} disponível" if p else "  (atualizada)"))
+        for p in pending.values():
+            print(f"\n## Novidades de {p['nome']}\n\n{p['novidades'] or '(sem notas)'}")
+        return
+
+    if args.cmd == "atualizar":
+        do_update()
+        return
 
     if args.cmd == "setup":
         save_profile(args.profile, args.server, args.database, args.tenant, args.default)

@@ -33,3 +33,4 @@ Uma verificação automática bloqueia o PR quando encontra esses padrões, mas 
 - [ ] Nomes de tabelas e colunas foram **conferidos no Fabric** (comando `describe` da fabric-readonly)
 - [ ] Não inventei o significado de colunas: o que não sei ficou como "a confirmar"
 - [ ] Se mexi em código: testei e o modo **somente leitura** continua intacto
+- [ ] Se deve chegar a todos como atualização: aumentei o `VERSION` e escrevi o que muda no topo do `CHANGELOG.md` (linguagem simples, é o que aparece no chat)

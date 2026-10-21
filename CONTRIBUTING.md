@@ -36,3 +36,13 @@ Na aba **Issues** do repositório → **New issue** → **Sugestão ou correçã
 - Toda mudança no `main` passa por **PR com aprovação do responsável** (arquivo `.github/CODEOWNERS`).
 - A verificação automática (credenciais, dados pessoais e, na skill de conexão, o filtro de somente leitura) precisa passar.
 - Depois de aprovada, a mudança chega a todos no próximo `git pull`.
+
+## Versões e atualizações
+
+- A versão fica no arquivo `VERSION` (MAJOR.MINOR.PATCH), e as novidades ficam no `CHANGELOG.md`.
+- Para uma mudança chegar a todos como atualização, **no mesmo PR**:
+  - aumente o `VERSION`: PATCH para correção, MINOR para novidade, MAJOR se exigir ação de quem usa;
+  - escreva no topo do `CHANGELOG.md` o que muda, **em linguagem simples**. É esse texto que aparece no chat.
+- Quando o PR entra no `main`, a Release do GitHub é criada automaticamente.
+- Quem usa é avisado no chat: a skill confere o GitHub ao ser acionada, no máximo 1x por hora, e oferece atualizar.
+- Quer receber e-mail a cada versão? No GitHub: **Watch → Custom → Releases**.

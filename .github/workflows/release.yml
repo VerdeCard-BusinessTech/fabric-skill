@@ -1,0 +1,25 @@
+name: release
+
+# Quando um PR que muda o VERSION entra no main, cria a tag e a Release no GitHub
+# com as notas daquela versão tiradas do CHANGELOG.md.
+on:
+  push:
+    branches: [main]
+    paths: [VERSION]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Criar release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          V=$(tr -d '[:space:]' < VERSION)
+          if gh release view "v$V" >/dev/null 2>&1; then echo "v$V já existe"; exit 0; fi
+          awk -v v="$V" '/^## /{p = ($2 == v)} p' CHANGELOG.md | tail -n +2 > notas.md
+          gh release create "v$V" --target "$GITHUB_SHA" --title "v$V" --notes-file notas.md
