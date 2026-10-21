@@ -186,3 +186,25 @@ O script bloqueia antes de enviar ao servidor qualquer coisa que não seja **uma
 | `Invalid object name` | Ver nome exato com `tables`; usar `[colchetes]` e `dbo.` |
 | macOS: `OpenSSL library could not be loaded` | Homebrew trocou o `openssl` para a v4; o driver só aceita 1.0/1.1/3. O script reinicia sozinho apontando para o `openssl@3`. Se faltar: `brew install openssl@3`. Em notebook: iniciar o Jupyter com `DYLD_LIBRARY_PATH=/opt/homebrew/opt/openssl@3/lib`. Não mexa nos links do Homebrew. |
 | Tabela recém-criada não aparece | O endpoint SQL sincroniza metadados com atraso de alguns minutos. |
+
+## Contribuindo: evoluir com o uso
+
+Quando, durante o uso, aparecer algo que melhoraria a skill (instruções, scripts ou documentação), ofereça **uma vez, em uma frase**: *"Quer que eu registre isso como sugestão para a skill?"*. Não insista. Exemplos: significado de coluna confirmado pela pessoa, regra de negócio, tabela nova, onde fica uma tabela, erro na documentação ou bug.
+
+Se a pessoa aceitar:
+
+1. **Escreva a mudança.** Se for sobre o significado de tabelas, a sugestão vai para o **fabric-dicionario**, não para esta skill.
+2. **Revise contra o que NUNCA pode entrar (o repositório é PÚBLICO):** senhas, tokens e credenciais; links de conexão do Fabric; dados de clientes ou colaboradores (CPF, nomes, contas, telefones, e-mails, matrículas); resultados de consultas com dados reais; IDs do Azure ou e-mails corporativos. Se a informação depende disso, generalize (ex.: `dbo.minha_tabela`, `'2026-09-01'`) ou descarte.
+3. **Mostre a mudança e peça confirmação explícita** antes de publicar. Publicar num repositório público não tem volta.
+4. **Se o GitHub estiver configurado** (`gh auth status` OK), na pasta da skill:
+   ```bash
+   git switch -c sugestao/<tema-curto>
+   git add <arquivos> && git commit -m "<resumo>"
+   gh repo fork --remote --remote-name fork        # só se a pessoa não tiver permissão de escrita
+   git push -u fork sugestao/<tema-curto>          # ou: git push -u origin ... se tiver permissão
+   gh pr create --repo VerdeCard-BusinessTech/fabric-skill --title "<resumo>" --body "<o que muda e por quê + checklist do modelo de PR marcado>"
+   git switch main                                 # a skill instalada volta para a versão oficial
+   ```
+   Passe o link do PR para a pessoa. A mudança só vale para todos depois que o responsável aprovar.
+5. **Sem GitHub:** escreva a sugestão pronta (título, o que muda, por quê) para a pessoa mandar ao responsável. Ou passe o link para abrir uma issue: https://github.com/VerdeCard-BusinessTech/fabric-skill/issues/new?template=sugestao.md
+6. **Nunca faça commit direto no `main`.** Ele é protegido: toda mudança entra por PR com aprovação e passa por uma verificação automática de credenciais e dados pessoais. Detalhes no `CONTRIBUTING.md`.
