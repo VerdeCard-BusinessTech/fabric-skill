@@ -187,6 +187,17 @@ O script bloqueia antes de enviar ao servidor qualquer coisa que não seja **uma
 | macOS: `OpenSSL library could not be loaded` | Homebrew trocou o `openssl` para a v4; o driver só aceita 1.0/1.1/3. O script reinicia sozinho apontando para o `openssl@3`. Se faltar: `brew install openssl@3`. Em notebook: iniciar o Jupyter com `DYLD_LIBRARY_PATH=/opt/homebrew/opt/openssl@3/lib`. Não mexa nos links do Homebrew. |
 | Tabela recém-criada não aparece | O endpoint SQL sincroniza metadados com atraso de alguns minutos. |
 
+## Atualizações (a skill avisa sozinha)
+
+Toda vez que a skill é acionada, o script confere no GitHub, **no máximo 1x por hora**, se há versão nova desta skill e do dicionário. Ele só lê o arquivo público `VERSION` e não envia nada sobre a pessoa. Sem internet, segue normalmente.
+
+- Se a saída de um comando trouxer uma linha **`[atualizacao] ...`**, depois de responder o que a pessoa pediu, avise **em uma frase simples** e ofereça atualizar. Exemplo: *"Tem uma versão nova da skill (1.8.0) com consultas mais rápidas. Quer que eu atualize?"*.
+  - Se vier **"IMPORTANTE (requer ação)"** (versão MAJOR), destaque isso.
+- Se a pessoa aceitar, ou pedir *"atualize as skills do Fabric"*: rode `$PY $Q atualizar` e **mostre no chat o "o que mudou"** que ele imprime.
+  - Se ele disser que pulou por alterações locais, explique e não force.
+- *"Qual versão eu tenho?"* → `$PY $Q versao`.
+- Não repita o aviso mais de uma vez na mesma conversa.
+
 ## Contribuindo: evoluir com o uso
 
 Quando, durante o uso, aparecer algo que melhoraria a skill (instruções, scripts ou documentação), ofereça **uma vez, em uma frase**: *"Quer que eu registre isso como sugestão para a skill?"*. Não insista. Exemplos: significado de coluna confirmado pela pessoa, regra de negócio, tabela nova, onde fica uma tabela, erro na documentação ou bug.
@@ -207,4 +218,5 @@ Se a pessoa aceitar:
    ```
    Passe o link do PR para a pessoa. A mudança só vale para todos depois que o responsável aprovar.
 5. **Sem GitHub:** escreva a sugestão pronta (título, o que muda, por quê) para a pessoa mandar ao responsável. Ou passe o link para abrir uma issue: https://github.com/VerdeCard-BusinessTech/fabric-skill/issues/new?template=sugestao.md
-6. **Nunca faça commit direto no `main`.** Ele é protegido: toda mudança entra por PR com aprovação e passa por uma verificação automática de credenciais e dados pessoais. Detalhes no `CONTRIBUTING.md`.
+6. **Se a mudança deve chegar a todos como atualização**, no mesmo PR: aumente o `VERSION` (PATCH para correção, MINOR para novidade, MAJOR se exigir ação de quem usa) e escreva no topo do `CHANGELOG.md`, em linguagem simples, o que muda para quem usa. É esse texto que aparece no chat.
+7. **Nunca faça commit direto no `main`.** Ele é protegido: toda mudança entra por PR com aprovação e passa por uma verificação automática de credenciais e dados pessoais. Detalhes no `CONTRIBUTING.md`.
