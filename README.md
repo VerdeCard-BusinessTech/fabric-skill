@@ -251,3 +251,9 @@ Para desinstalar, apague as pastas `~/.config/fabric-readonly` e `~/.claude/skil
 | `py`/`python3` não encontrado | Instale o Python 3.10+ (veja a seção do seu sistema). |
 | macOS: `OpenSSL library could not be loaded` | O Homebrew atualizou o OpenSSL para a versão 4. A skill se ajusta sozinha se o `openssl@3` estiver instalado (`brew install openssl@3`). Em Jupyter, inicie com `DYLD_LIBRARY_PATH=/opt/homebrew/opt/openssl@3/lib jupyter lab`. |
 | Tabela nova não aparece | O endpoint SQL leva alguns minutos para sincronizar. |
+
+## Contribuindo
+
+A skill evolui com o uso, mediante aprovação: toda mudança entra por PR revisado. Veja o **[CONTRIBUTING.md](CONTRIBUTING.md)**.
+
+> 🚨 Repositório **público**: nunca inclua senhas, tokens, links de conexão do Fabric ou dados de clientes e colaboradores.
