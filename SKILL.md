@@ -119,6 +119,19 @@ $PY $Q batch --json consultas.json                     # {"nome": "SELECT ...", 
 
 Opções: `--profile <nome>`, `--max-rows N` (padrão 200; `0` = tudo), `--format table|csv|json`, `--out arquivo`, `--timeout S` (padrão 300s; `0` = sem limite), `--refresh` (em `tables`/`describe`: recarrega a estrutura do Fabric), `--workers N` (batch; padrão 20).
 
+### Dicionário de tabelas (skill fabric-dicionario)
+
+Se a skill **fabric-dicionario** estiver instalada (`~/.claude/skills/fabric-dicionario`), **leia o índice do `SKILL.md` dela antes de escrever SQL**, e depois só o arquivo do assunto em `tabelas/`. Ele diz:
+- qual tabela usar e em qual Lakehouse ela está;
+- o que as colunas significam;
+- as regras de negócio (ex.: filtro do número oficial do SAC, tempos em segundos).
+
+Isso evita consultas erradas, que também gastam janelas no Fabric. Se a tabela estiver em "outro workspace", peça o link desse workspace e crie um perfil novo com `setup`.
+
+Se a pessoa descobrir algo novo sobre uma tabela (significado de coluna, regra, onde fica), ofereça registrar no dicionário seguindo o `MODELO.md` dele.
+
+Se o dicionário não estiver instalado e a pessoa perguntar o que uma tabela significa, sugira instalar: https://github.com/VerdeCard-BusinessTech/fabric-dicionario
+
 ### Uso consciente do Fabric (OBRIGATÓRIO)
 
 O Fabric da organização cobra **por janela de consulta aberta** (cerca de 1 min por conexão), não pelo volume, e tem um teto de capacidade simultânea. Cada execução de `query` abre uma janela. Por isso:

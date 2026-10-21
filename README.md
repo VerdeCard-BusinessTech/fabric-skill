@@ -48,7 +48,7 @@ No Windows ou no macOS, também dá para usar o terminal em vez do app. Windows 
 Com o **Claude Code aberto** (Passo 0), copie e cole esta mensagem:
 
 ```text
-Instale a skill https://github.com/VerdeCard-BusinessTech/fabric-skill no meu computador. Primeiro detecte meu sistema operacional (macOS, Windows ou Linux) e siga a seção do README para ele: clone em ~/.claude/skills/fabric-readonly, rode o setup e me ajude a configurar o acesso ao Fabric, me guiando passo a passo em linguagem simples. Se você NÃO estiver rodando no meu computador (por exemplo, se este for o chat do site claude.ai), não tente instalar: me explique, sem termos técnicos, como abrir a aba Code do app Claude no meu computador e onde colar esta mesma mensagem.
+Instale a skill https://github.com/VerdeCard-BusinessTech/fabric-skill no meu computador. Primeiro detecte meu sistema operacional (macOS, Windows ou Linux) e siga a seção do README para ele: clone em ~/.claude/skills/fabric-readonly, instale também o dicionário de tabelas https://github.com/VerdeCard-BusinessTech/fabric-dicionario clonando em ~/.claude/skills/fabric-dicionario, rode o setup e me ajude a configurar o acesso ao Fabric, me guiando passo a passo em linguagem simples. Se você NÃO estiver rodando no meu computador (por exemplo, se este for o chat do site claude.ai), não tente instalar: me explique, sem termos técnicos, como abrir a aba Code do app Claude no meu computador e onde colar esta mesma mensagem.
 ```
 
 O Claude identifica seu sistema, baixa a skill, instala o ambiente, mostra o guia, pede o link, abre o login da Microsoft e testa. Você só cola o link, faz o login e clica em **Permitir** quando ele pedir.
@@ -56,6 +56,16 @@ O Claude identifica seu sistema, baixa a skill, instala o ambiente, mostra o gui
 No final, o Claude mostra no chat um **guia rápido**: o que dá para pedir, os padrões (tempo máximo de 5 min por consulta, 200 linhas no chat, batch) e o que fazer se der erro. Para ver de novo a qualquer hora, peça *"mostre o guia rápido do Fabric"*.
 
 ---
+
+## Dicionário de tabelas (recomendado)
+
+O **[fabric-dicionario](https://github.com/VerdeCard-BusinessTech/fabric-dicionario)** é uma skill separada com o que cada tabela significa, onde está e as regras de negócio (Voll, SAC, faturas, clientes, monitoria). Com ela instalada, o Claude consulta o dicionário antes de escrever o SQL. Ela também funciona sozinha, para quem só quer entender os dados, sem login nem Python.
+
+A mensagem de instalação acima já instala as duas. Para instalar só o dicionário:
+
+```bash
+git clone https://github.com/VerdeCard-BusinessTech/fabric-dicionario.git ~/.claude/skills/fabric-dicionario
+```
 
 ## Instalação manual
 
